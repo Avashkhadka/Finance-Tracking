@@ -1,0 +1,369 @@
+const express = require('express');
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+const db = require('./db');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = 'finora_super_secret_key_123'; // In prod, this should be in .env
+
+// === AUTHENTICATION MIDDLEWARE ===
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (token == null) return res.sendStatus(401);
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.sendStatus(403);
+    req.user = user;
+    next();
+  });
+};
+
+const requireAdmin = (req, res, next) => {
+  if (req.user && req.user.role === 'admin') {
+    next();
+  } else {
+    res.status(403).json({ error: 'Forbidden: Admin access required' });
+  }
+};
+
+// === LOGIN ENDPOINT ===
+app.post('/api/login', (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+
+  db.get("SELECT * FROM users WHERE email = ?", [email], async (err, user) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) return res.status(401).json({ error: 'Invalid credentials' });
+
+    // Update last_logged_in
+    const now = new Date().toISOString();
+    db.run("UPDATE users SET last_logged_in = ? WHERE id = ?", [now, user.id]);
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, name: user.name, role: user.role }, 
+      JWT_SECRET, 
+      { expiresIn: '2h' }
+    );
+    
+    const { password: _, ...userInfo } = user;
+    userInfo.last_logged_in = now;
+    res.json({ token, user: userInfo });
+  });
+});
+
+// === CODES ===
+app.get('/api/codes', authenticateToken, (req, res) => {
+  db.all("SELECT * FROM codes", [], (err, rows) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json(rows);
+  });
+});
+
+app.get('/api/codes/:number', authenticateToken, (req, res) => {
+  db.get("SELECT * FROM codes WHERE code_number = ?", [req.params.number], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!row) return res.status(404).json({ error: 'Code not found' });
+    res.json(row);
+  });
+});
+
+app.post('/api/codes', authenticateToken, requireAdmin, (req, res) => {
+  const { code_number, description, classification } = req.body;
+  if (!code_number || !description || !classification) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  db.run(`INSERT INTO codes (code_number, description, classification) VALUES (?, ?, ?)`,
+    [code_number, description, classification],
+    function (err) {
+      if (err) {
+        res.status(500).json({ error: err.message });
+        return;
+      }
+      res.json({ id: this.lastID, code_number, description, classification });
+    });
+});
+
+// === USERS ===
+app.get('/api/users', authenticateToken, requireAdmin, (req, res) => {
+  db.all("SELECT id, name, email, role, last_logged_in FROM users", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows);
+  });
+});
+
+app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
+  const { name, email, role, password } = req.body;
+  if (!name || !email || !role || !password) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(password, salt); 
+
+  db.run(`INSERT INTO users (name, email, password, role, last_logged_in) VALUES (?, ?, ?, ?, ?)`,
+    [name, email, hashedPassword, role, 'Never'],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ id: this.lastID, name, email, role, last_logged_in: 'Never' });
+    });
+});
+
+// === PASSWORD MANAGEMENT ===
+app.post('/api/forgot-password', (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email required' });
+  
+  db.get("SELECT * FROM users WHERE email = ?", [email], (err, user) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!user) {
+      // Don't leak whether email exists
+      return res.json({ success: true, message: 'If the email exists, a reset request was sent to the admin.' });
+    }
+    
+    db.run("INSERT INTO password_reset_requests (email) VALUES (?)", [email], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ success: true, message: 'Password reset request sent to admin.' });
+    });
+  });
+});
+
+app.get('/api/password-reset-requests', authenticateToken, requireAdmin, (req, res) => {
+  db.all("SELECT * FROM password_reset_requests WHERE status = 'pending' ORDER BY created_at DESC", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows);
+  });
+});
+
+app.put('/api/users/:id/reset-password', authenticateToken, requireAdmin, async (req, res) => {
+  const { newPassword, requestId } = req.body;
+  const { id } = req.params;
+  
+  if (!newPassword) return res.status(400).json({ error: 'New password required' });
+  
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(newPassword, salt);
+  
+  db.run("UPDATE users SET password = ? WHERE id = ?", [hashedPassword, id], (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    
+    if (requestId) {
+      db.run("UPDATE password_reset_requests SET status = 'resolved' WHERE id = ?", [requestId]);
+    }
+    res.json({ success: true, message: 'Password successfully reset by admin.' });
+  });
+});
+
+app.put('/api/users/change-password', authenticateToken, async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) return res.status(400).json({ error: 'Missing passwords' });
+  
+  db.get("SELECT * FROM users WHERE id = ?", [req.user.id], async (err, user) => {
+    if (err) return res.status(500).json({ error: err.message });
+    
+    const validPassword = await bcrypt.compare(oldPassword, user.password);
+    if (!validPassword) return res.status(401).json({ error: 'Incorrect current password' });
+    
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    
+    db.run("UPDATE users SET password = ? WHERE id = ?", [hashedPassword, req.user.id], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ success: true, message: 'Password updated successfully' });
+    });
+  });
+});
+
+// === FISCAL YEARS ===
+app.get('/api/fiscal-years', authenticateToken, (req, res) => {
+  db.all("SELECT * FROM fiscal_years ORDER BY id DESC", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows);
+  });
+});
+
+app.post('/api/fiscal-years', authenticateToken, requireAdmin, (req, res) => {
+  const { name, start_date, end_date } = req.body;
+  if (!name || !start_date || !end_date) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  db.run(`INSERT INTO fiscal_years (name, start_date, end_date, is_current) VALUES (?, ?, ?, ?)`,
+    [name, start_date, end_date, 0],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ id: this.lastID, name, start_date, end_date, is_current: 0 });
+    });
+});
+
+app.put('/api/fiscal-years/:id/set-current', authenticateToken, requireAdmin, (req, res) => {
+  const { id } = req.params;
+  db.serialize(() => {
+    db.run("BEGIN TRANSACTION");
+    db.run("UPDATE fiscal_years SET is_current = 0", (err) => {
+      if (err) { db.run("ROLLBACK"); return res.status(500).json({ error: err.message }); }
+    });
+    db.run("UPDATE fiscal_years SET is_current = 1 WHERE id = ?", [id], (err) => {
+      if (err) { db.run("ROLLBACK"); return res.status(500).json({ error: err.message }); }
+    });
+    db.run("COMMIT", (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ success: true, message: 'Fiscal year updated' });
+    });
+  });
+});
+
+// === SETTINGS ===
+app.get('/api/settings', (req, res) => {
+  // Publicly readable so app can load org_name easily
+  db.all("SELECT * FROM settings", [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    const settings = rows.reduce((acc, curr) => {
+      acc[curr.key] = curr.value;
+      return acc;
+    }, {});
+    res.json(settings);
+  });
+});
+
+app.put('/api/settings', authenticateToken, requireAdmin, (req, res) => {
+  const { org_name } = req.body;
+  if (org_name === undefined) {
+    return res.status(400).json({ error: 'Missing org_name' });
+  }
+  
+  db.run("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", 
+    ['org_name', org_name], 
+    (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ success: true, org_name });
+    }
+  );
+});
+
+// === PUBLIC STATS ===
+app.get('/api/public/stats', (req, res) => {
+  // Returns aggregated, anonymous stats for the login page charts
+  db.all("SELECT * FROM transactions", [], (err, txs) => {
+    if (err) return res.status(500).json({ error: err.message });
+    
+    db.all("SELECT * FROM transaction_lines", [], (err, lines) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      // Group by YYYY-MM
+      const monthlyStats = {};
+      
+      txs.forEach(tx => {
+        if (!tx.date) return;
+        const month = tx.date.substring(0, 7); // e.g. "2026-09"
+        if (!monthlyStats[month]) {
+          monthlyStats[month] = { netWorth: 0, income: 0, expense: 0 };
+        }
+        
+        const txLines = lines.filter(l => l.transaction_id === tx.id);
+        const dr = txLines.filter(l => l.type === 'Dr').reduce((s, l) => s + l.amount, 0);
+        const cr = txLines.filter(l => l.type === 'Cr').reduce((s, l) => s + l.amount, 0);
+        
+        // Simplified heuristic: Cr is income/liability, Dr is expense/asset
+        // We'll just map Dr to Expense and Cr to Income for the visual chart
+        monthlyStats[month].expense += dr;
+        monthlyStats[month].income += cr;
+        monthlyStats[month].netWorth += (cr - dr); // Just a rough aggregate
+      });
+
+      // Convert to array and sort chronologically
+      const sortedMonths = Object.keys(monthlyStats).sort();
+      const chartData = sortedMonths.map(m => ({
+        month: m,
+        ...monthlyStats[m]
+      }));
+
+      // Calculate totals
+      let totalNetWorth = 0;
+      chartData.forEach(d => totalNetWorth += d.netWorth);
+
+      res.json({
+        chartData: chartData.slice(-6), // last 6 months
+        totalNetWorth
+      });
+    });
+  });
+});
+
+// === TRANSACTIONS ===
+app.get('/api/transactions', authenticateToken, (req, res) => {
+  // Fetch transactions and their lines
+  db.all("SELECT * FROM transactions ORDER BY id DESC", [], (err, txs) => {
+    if (err) return res.status(500).json({ error: err.message });
+    
+    if (txs.length === 0) return res.json([]);
+
+    db.all("SELECT * FROM transaction_lines", [], (err, lines) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      const txsWithLines = txs.map(tx => {
+        const txLines = lines.filter(l => l.transaction_id === tx.id);
+        const totalDr = txLines.filter(l => l.type === 'Dr').reduce((sum, l) => sum + l.amount, 0);
+        const totalCr = txLines.filter(l => l.type === 'Cr').reduce((sum, l) => sum + l.amount, 0);
+        
+        return {
+          ...tx,
+          lines: txLines,
+          totalDr,
+          totalCr
+        };
+      });
+      res.json(txsWithLines);
+    });
+  });
+});
+
+app.post('/api/transactions', authenticateToken, (req, res) => {
+  const { sn, name, date, final_description, lines } = req.body;
+  if (!sn || !name || !date || !lines || lines.length === 0) {
+    return res.status(400).json({ error: 'Missing required fields or lines' });
+  }
+
+  db.serialize(() => {
+    db.run("BEGIN TRANSACTION");
+    db.run(`INSERT INTO transactions (sn, name, date, final_description) VALUES (?, ?, ?, ?)`,
+      [sn, name, date, final_description],
+      function (err) {
+        if (err) {
+          db.run("ROLLBACK");
+          return res.status(500).json({ error: err.message });
+        }
+        
+        const txId = this.lastID;
+        const stmt = db.prepare("INSERT INTO transaction_lines (transaction_id, code_number, type, amount) VALUES (?, ?, ?, ?)");
+        
+        for (const line of lines) {
+          stmt.run(txId, line.code_number, line.type, line.amount, (err) => {
+             if (err) console.error("Error inserting line:", err);
+          });
+        }
+        stmt.finalize();
+        
+        db.run("COMMIT", (err) => {
+          if (err) return res.status(500).json({ error: "Commit failed" });
+          res.json({ success: true, transaction_id: txId });
+        });
+      }
+    );
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`Backend server running on http://localhost:${PORT}`);
+});
