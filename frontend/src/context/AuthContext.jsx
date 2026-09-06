@@ -1,0 +1,76 @@
+import React, { createContext, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+
+export const AuthContext = createContext();
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(localStorage.getItem('token') || null);
+  const [loading, setLoading] = useState(true);
+  const [orgName, setOrgName] = useState('FinanceManage');
+
+  const refreshOrgName = async () => {
+    try {
+      const res = await fetch('/api/settings');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.org_name) {
+          setOrgName(data.org_name);
+          document.title = data.org_name;
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    refreshOrgName();
+  }, []);
+
+  useEffect(() => {
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload.exp * 1000 < Date.now()) {
+          logout();
+        } else {
+          setUser(payload);
+        }
+      } catch (e) {
+        logout();
+      }
+    }
+    setLoading(false);
+  }, [token]);
+
+  const login = async (tokenData, userData) => {
+    localStorage.setItem('token', tokenData);
+    setToken(tokenData);
+    setUser(userData);
+    
+    // Fetch codes and save to sessionStorage
+    try {
+      const res = await fetch('/api/codes', { headers: { 'Authorization': 'Bearer ' + tokenData } });
+      if (res.ok) {
+        const codes = await res.json();
+        sessionStorage.setItem('codes', JSON.stringify(codes));
+      }
+    } catch (e) {
+      console.error("Failed to fetch codes on login");
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    sessionStorage.removeItem('codes');
+    setToken(null);
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, token, login, logout, loading, orgName, refreshOrgName }}>
+      {!loading && children}
+    </AuthContext.Provider>
+  );
+};
