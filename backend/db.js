@@ -50,7 +50,9 @@ db.serialize(() => {
     sn TEXT NOT NULL,
     date TEXT NOT NULL,
     final_description TEXT,
-    created_by TEXT
+    created_by TEXT,
+    modified_by TEXT,
+    modified_at TEXT
   )`);
 
   db.run(`CREATE TABLE IF NOT EXISTS transaction_lines (

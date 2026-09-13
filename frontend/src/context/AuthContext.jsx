@@ -7,9 +7,11 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token') || null);
   const [loading, setLoading] = useState(true);
-  const [orgName, setOrgName] = useState('FinanceManage');
+  const [orgName, setOrgName] = useState('');
   const [orgAddress, setOrgAddress] = useState('');
   const [currency, setCurrency] = useState('$');
+  const [receiptLanguage, setReceiptLanguage] = useState('nepali');
+  const [codes, setCodes] = useState([]);
 
   const refreshOrgName = async () => {
     try {
@@ -22,6 +24,7 @@ export const AuthProvider = ({ children }) => {
         }
         if (data.org_address) setOrgAddress(data.org_address);
         if (data.currency) setCurrency(data.currency);
+        if (data.receipt_language) setReceiptLanguage(data.receipt_language);
       }
     } catch (e) {
       console.error(e);
@@ -73,7 +76,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, loading, orgName, orgAddress, currency, refreshOrgName }}>
+    <AuthContext.Provider value={{ token, user, orgName, orgAddress, currency, receiptLanguage, login, logout, codes, setCodes, loading, refreshOrgName }}>
       {!loading && children}
     </AuthContext.Provider>
   );

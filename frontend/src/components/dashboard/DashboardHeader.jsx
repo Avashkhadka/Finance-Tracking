@@ -7,6 +7,7 @@ export default function DashboardHeader() {
     const navigate = useNavigate();
     const location = useLocation();
     const [showDropdown, setShowDropdown] = useState(false);
+    const [showReports, setShowReports] = useState(false);
     const [currentFY, setCurrentFY] = useState(null);
 
     const fetchActiveFY = () => {
@@ -47,11 +48,28 @@ export default function DashboardHeader() {
                 <nav className="hidden md:flex items-center gap-1">
                     <Link to="/dashboard" className={navItemClass('/dashboard')}>Dashboard</Link>
                     <Link to="/transactions" className={navItemClass('/transactions')}>Transactions</Link>
+
+                    <div className="relative">
+                        <button
+                            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${showReports || location.pathname.includes('/reports') ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+                            onClick={() => setShowReports(!showReports)}
+                        >
+                            Reports
+                            <span className="material-symbols-outlined text-[16px]">expand_more</span>
+                        </button>
+                        {showReports && (
+                            <div className="absolute top-full mt-1 left-0 w-40 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-50">
+                                <Link to="/transactions/all" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors" onClick={() => setShowReports(false)}>Journal</Link>
+                                <button className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors" onClick={() => setShowReports(false)}>Ledger</button>
+                                <button className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors" onClick={() => setShowReports(false)}>Trial</button>
+                            </div>
+                        )}
+                    </div>
+
                     {user?.role === 'admin' && (
                         <>
                             <Link to="/users" className={navItemClass('/users')}>Users</Link>
                             <Link to="/codes" className={navItemClass('/codes')}>Codes</Link>
-                            <Link to="/fiscal-years" className={navItemClass('/fiscal-years')}>Fiscal Years</Link>
                             <Link to="/settings" className={navItemClass('/settings')}>Settings</Link>
                         </>
                     )}
@@ -61,17 +79,9 @@ export default function DashboardHeader() {
             <div className="flex items-center gap-3">
                 {currentFY && (
                     <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-brand-50 border border-brand-100 rounded-lg text-brand-700">
-                        <span className="material-symbols-outlined text-[16px]">calendar_month</span>
                         <span className="text-xs font-bold uppercase tracking-wider">FY {currentFY.name}</span>
                     </div>
                 )}
-
-                <button aria-label="Notifications" className="relative p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors" type="button">
-                    <span className="material-symbols-outlined text-[20px]">notifications</span>
-                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-brand-600 ring-2 ring-white"></span>
-                </button>
-
-                <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
 
                 <div className="relative">
                     <button
@@ -94,7 +104,7 @@ export default function DashboardHeader() {
                                 <p className="text-sm font-medium text-slate-900">{user?.name}</p>
                                 <p className="text-xs text-slate-500 truncate">{user?.email}</p>
                             </div>
-                            <Link 
+                            <Link
                                 to="/change-password"
                                 className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors"
                             >

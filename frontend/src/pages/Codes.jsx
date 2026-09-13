@@ -1,14 +1,19 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import DashboardHeader from '../components/dashboard/DashboardHeader';
+import Swal from 'sweetalert2';
 
 export default function Codes() {
-    const { token } = useContext(AuthContext);
+    const { token, user } = useContext(AuthContext);
     const [codes, setCodes] = useState([]);
     const [message, setMessage] = useState('');
     const [filterCategory, setFilterCategory] = useState('All Classifications');
+    const [sortOrder, setSortOrder] = useState('asc');
 
-    useEffect(() => {
+    const [editingCode, setEditingCode] = useState(null);
+    const [codeForm, setCodeForm] = useState({ code_id: '', code_desc: '', code_class: 'Assets' });
+
+    const fetchCodes = () => {
         fetch('/api/codes', { headers: { 'Authorization': 'Bearer ' + token } })
             .then(res => res.json())
             .then(data => {
@@ -16,22 +21,33 @@ export default function Codes() {
                 sessionStorage.setItem('codes', JSON.stringify(data));
             })
             .catch(console.error);
+    };
+
+    useEffect(() => {
+        fetchCodes();
     }, [token]);
 
-    const handleAddCode = async (e) => {
+    const handleFormChange = (e) => {
+        const { name, value } = e.target;
+        setCodeForm(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSaveCode = async (e) => {
         e.preventDefault();
         setMessage('');
-        const formData = new FormData(e.target);
         const newCode = {
-            code_number: formData.get('code_id'),
-            description: formData.get('code_desc'),
-            classification: formData.get('code_class'),
+            code_number: codeForm.code_id,
+            description: codeForm.code_desc,
+            classification: codeForm.code_class,
             status: 'Active'
         };
 
+        const url = editingCode ? `/api/codes/${editingCode}` : '/api/codes';
+        const method = editingCode ? 'PUT' : 'POST';
+
         try {
-            const res = await fetch('/api/codes', {
-                method: 'POST',
+            const res = await fetch(url, {
+                method: method,
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': 'Bearer ' + token
@@ -39,12 +55,10 @@ export default function Codes() {
                 body: JSON.stringify(newCode)
             });
             if (res.ok) {
-                const added = await res.json();
-                const updatedCodes = [...codes, added];
-                setCodes(updatedCodes);
-                sessionStorage.setItem('codes', JSON.stringify(updatedCodes));
-                e.target.reset();
-                setMessage('Financial code successfully registered.');
+                fetchCodes();
+                setCodeForm({ code_id: '', code_desc: '', code_class: 'Assets' });
+                setMessage(editingCode ? 'Financial code successfully updated.' : 'Financial code successfully registered.');
+                setEditingCode(null);
             } else {
                 const err = await res.json();
                 setMessage(`Error: ${err.error}`);
@@ -52,6 +66,55 @@ export default function Codes() {
         } catch (err) {
             console.error(err);
             setMessage('Failed to connect to the server.');
+        }
+    };
+
+    const handleEditClick = (c) => {
+        setEditingCode(c.code_number);
+        setCodeForm({
+            code_id: c.code_number,
+            code_desc: c.description,
+            code_class: c.classification
+        });
+        setMessage('');
+    };
+
+    const handleCancelEdit = () => {
+        setEditingCode(null);
+        setCodeForm({ code_id: '', code_desc: '', code_class: 'Assets' });
+        setMessage('');
+    };
+
+    const handleDeleteCode = async (c) => {
+        const confirm = await Swal.fire({
+            title: 'Are you sure?',
+            text: "This action cannot be undone.",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, delete it!'
+        });
+        
+        if (confirm.isConfirmed) {
+            try {
+                const res = await fetch(`/api/codes/${c.code_number}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': 'Bearer ' + token
+                    }
+                });
+                if (res.ok) {
+                    fetchCodes();
+                    Swal.fire('Deleted!', 'Code has been deleted.', 'success');
+                } else {
+                    const err = await res.json();
+                    Swal.fire('Error', err.error, 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                Swal.fire('Error', 'Failed to connect to the server.', 'error');
+            }
         }
     };
 
@@ -69,17 +132,17 @@ export default function Codes() {
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
-                        {/* Left: Create Code Form */}
+                        {/* Left: Create/Edit Code Form */}
                         <div className="lg:col-span-4 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col self-start">
                             <div className="p-6 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
                                 <div>
-                                    <h2 className="text-lg font-bold text-slate-900">Add Code</h2>
-                                    <p className="text-xs text-slate-500">Register new account</p>
+                                    <h2 className="text-lg font-bold text-slate-900">{editingCode ? 'Edit Code' : 'Add Code'}</h2>
+                                    <p className="text-xs text-slate-500">{editingCode ? 'Update account details' : 'Register new account'}</p>
                                 </div>
                                 <span className="material-symbols-outlined text-brand-600">account_tree</span>
                             </div>
 
-                            <form className="p-6 space-y-5" onSubmit={handleAddCode}>
+                            <form className="p-6 space-y-5" onSubmit={handleSaveCode}>
                                 {message && (
                                     <div className={`px-4 py-3 rounded-lg text-sm ${message.includes('Error') || message.includes('Failed') ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
                                         {message}
@@ -90,38 +153,85 @@ export default function Codes() {
                                     <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="code_id">Code Number</label>
                                     <div className="relative">
                                         <span className="absolute left-3 top-2 font-medium text-slate-400">#</span>
-                                        <input className="w-full pl-8 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all" id="code_id" name="code_id" maxLength="6" placeholder="e.g. 1040" required type="text" />
+                                        <input
+                                            className="w-full pl-8 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all"
+                                            id="code_id"
+                                            name="code_id"
+                                            value={codeForm.code_id}
+                                            onChange={handleFormChange}
+                                            maxLength="6"
+                                            placeholder="e.g. 1040"
+                                            required
+                                            type="number"
+                                        />
                                     </div>
                                 </div>
 
                                 <div>
                                     <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="code_desc">Description</label>
-                                    <input className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all" id="code_desc" name="code_desc" placeholder="e.g. Operating Reserve" required type="text" />
+                                    <input
+                                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all"
+                                        id="code_desc"
+                                        name="code_desc"
+                                        value={codeForm.code_desc}
+                                        onChange={handleFormChange}
+                                        placeholder="e.g. Operating Reserve"
+                                        required
+                                        type="text"
+                                    />
                                 </div>
 
                                 <div>
                                     <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Classification</label>
                                     <div className="grid grid-cols-2 gap-2">
                                         <label className="cursor-pointer relative">
-                                            <input defaultChecked className="peer sr-only" name="code_class" type="radio" value="Assets" />
+                                            <input
+                                                className="peer sr-only"
+                                                name="code_class"
+                                                type="radio"
+                                                value="Assets"
+                                                checked={codeForm.code_class === 'Assets'}
+                                                onChange={handleFormChange}
+                                            />
                                             <div className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-center text-xs font-medium text-slate-600 peer-checked:bg-brand-50 peer-checked:border-brand-500 peer-checked:text-brand-700 transition-all">
                                                 Assets
                                             </div>
                                         </label>
                                         <label className="cursor-pointer relative">
-                                            <input className="peer sr-only" name="code_class" type="radio" value="Liabilities" />
+                                            <input
+                                                className="peer sr-only"
+                                                name="code_class"
+                                                type="radio"
+                                                value="Liabilities"
+                                                checked={codeForm.code_class === 'Liabilities'}
+                                                onChange={handleFormChange}
+                                            />
                                             <div className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-center text-xs font-medium text-slate-600 peer-checked:bg-brand-50 peer-checked:border-brand-500 peer-checked:text-brand-700 transition-all">
                                                 Liabilities
                                             </div>
                                         </label>
                                         <label className="cursor-pointer relative">
-                                            <input className="peer sr-only" name="code_class" type="radio" value="Income" />
+                                            <input
+                                                className="peer sr-only"
+                                                name="code_class"
+                                                type="radio"
+                                                value="Income"
+                                                checked={codeForm.code_class === 'Income'}
+                                                onChange={handleFormChange}
+                                            />
                                             <div className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-center text-xs font-medium text-slate-600 peer-checked:bg-brand-50 peer-checked:border-brand-500 peer-checked:text-brand-700 transition-all">
                                                 Income
                                             </div>
                                         </label>
                                         <label className="cursor-pointer relative">
-                                            <input className="peer sr-only" name="code_class" type="radio" value="Expenses" />
+                                            <input
+                                                className="peer sr-only"
+                                                name="code_class"
+                                                type="radio"
+                                                value="Expenses"
+                                                checked={codeForm.code_class === 'Expenses'}
+                                                onChange={handleFormChange}
+                                            />
                                             <div className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-center text-xs font-medium text-slate-600 peer-checked:bg-brand-50 peer-checked:border-brand-500 peer-checked:text-brand-700 transition-all">
                                                 Expenses
                                             </div>
@@ -129,11 +239,20 @@ export default function Codes() {
                                     </div>
                                 </div>
 
-                                <div className="pt-2">
+                                <div className="pt-2 flex flex-col gap-2">
                                     <button className="w-full py-2.5 rounded-lg bg-brand-600 text-white font-medium text-sm shadow-sm hover:bg-brand-700 transition-all flex items-center justify-center gap-2" type="submit">
-                                        <span className="material-symbols-outlined text-[18px]">add_circle</span>
-                                        Register Code
+                                        <span className="material-symbols-outlined text-[18px]">{editingCode ? 'save' : 'add_circle'}</span>
+                                        {editingCode ? 'Update Code' : 'Register Code'}
                                     </button>
+                                    {editingCode && (
+                                        <button
+                                            type="button"
+                                            onClick={handleCancelEdit}
+                                            className="w-full py-2.5 rounded-lg bg-white border border-slate-300 text-slate-700 font-medium text-sm shadow-sm hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                                        >
+                                            Cancel
+                                        </button>
+                                    )}
                                 </div>
                             </form>
                         </div>
@@ -147,7 +266,7 @@ export default function Codes() {
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Filter:</span>
-                                    <select 
+                                    <select
                                         className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none"
                                         value={filterCategory}
                                         onChange={e => setFilterCategory(e.target.value)}
@@ -165,31 +284,60 @@ export default function Codes() {
                                 <table className="w-full text-left text-sm">
                                     <thead>
                                         <tr className="border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-white">
-                                            <th className="py-3 px-6">Code</th>
+                                            <th className="py-3 px-6 cursor-pointer hover:bg-slate-50 transition-colors select-none" onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}>
+                                                <div className="flex items-center gap-1">
+                                                    Code
+                                                    <span className="material-symbols-outlined text-[14px]">
+                                                        {sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}
+                                                    </span>
+                                                </div>
+                                            </th>
                                             <th className="py-3 px-6">Description</th>
                                             <th className="py-3 px-6">Classification</th>
-                                            <th className="py-3 px-6 text-right">Status</th>
+                                            <th className="py-3 px-6 text-right">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 bg-white">
                                         {codes
                                             .filter(c => filterCategory === 'All Classifications' || c.classification === filterCategory)
+                                            .sort((a, b) => {
+                                                const numA = parseInt(a.code_number, 10) || 0;
+                                                const numB = parseInt(b.code_number, 10) || 0;
+                                                return sortOrder === 'asc' ? numA - numB : numB - numA;
+                                            })
                                             .map(c => (
-                                            <tr className="hover:bg-slate-50/50 transition-colors" key={c.code_number || c.id}>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className="font-mono font-medium text-slate-700">#{c.code_number}</span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className="font-medium text-slate-900">{c.description}</span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className="text-slate-600">{c.classification}</span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-right">
-                                                    <span className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded text-xs font-medium">Active</span>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                                <tr className="hover:bg-slate-50/50 transition-colors" key={c.code_number || c.id}>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <span className="font-mono font-medium text-slate-700">#{c.code_number}</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <span className="font-medium text-slate-900">{c.description}</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <span className="text-slate-600">{c.classification}</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                                                    <div className="flex justify-end gap-1">
+                                                        <button
+                                                            onClick={() => handleEditClick(c)}
+                                                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                            title="Edit Code"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[18px]">edit</span>
+                                                        </button>
+                                                        {user?.role === 'admin' && (
+                                                            <button
+                                                                onClick={() => handleDeleteCode(c)}
+                                                                className="p-1.5 text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                                                                title="Delete Code"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
                                         {codes.filter(c => filterCategory === 'All Classifications' || c.classification === filterCategory).length === 0 && (
                                             <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-500">No codes registered</td></tr>
                                         )}

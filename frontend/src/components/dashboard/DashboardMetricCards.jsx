@@ -24,7 +24,7 @@ export default function DashboardMetricCards({ transactions = [] }) {
   };
 
   return (
-    <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+    <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
       {/*  Total Assets  */}
       <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between hover:border-slate-300 transition-all">
         <div className="flex items-center justify-between">
@@ -70,21 +70,6 @@ export default function DashboardMetricCards({ transactions = [] }) {
         </div>
       </div>
       
-      {/*  Balance  */}
-      <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between hover:border-slate-300 transition-all">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Net Ledger Balance</span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
-            Status
-          </span>
-        </div>
-        <div className="mt-3">
-          <div className={`text-2xl sm:text-3xl font-bold tracking-tight font-mono ${totalAssets === totalLiabilities ? 'text-slate-900' : 'text-rose-600'}`}>
-            {formatMoney(Math.abs(totalAssets - totalLiabilities))}
-          </div>
-          <p className="text-xs text-slate-500 mt-1">{totalAssets === totalLiabilities ? 'Balanced' : 'Imbalanced Ledger'}</p>
-        </div>
-      </div>
     </section>
   );
 }

@@ -96,6 +96,31 @@ app.post('/api/codes', authenticateToken, requireAdmin, (req, res) => {
     });
 });
 
+app.put('/api/codes/:number', authenticateToken, requireAdmin, (req, res) => {
+  const { number } = req.params;
+  const { code_number, description, classification } = req.body;
+  if (!code_number || !description || !classification) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  db.run(`UPDATE codes SET code_number = ?, description = ?, classification = ? WHERE code_number = ?`,
+    [code_number, description, classification, number],
+    function (err) {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      res.json({ success: true, code_number, description, classification });
+    });
+});
+
+app.delete('/api/codes/:number', authenticateToken, requireAdmin, (req, res) => {
+  const { number } = req.params;
+  db.run(`DELETE FROM codes WHERE code_number = ?`, [number], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ success: true, message: 'Code deleted' });
+  });
+});
+
 // === USERS ===
 app.get('/api/users', authenticateToken, requireAdmin, (req, res) => {
   db.all("SELECT id, name, email, role, last_logged_in FROM users", [], (err, rows) => {
@@ -238,12 +263,13 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.put('/api/settings', authenticateToken, requireAdmin, (req, res) => {
-  const { org_name, org_address, currency } = req.body;
+  const { org_name, org_address, currency, receipt_language } = req.body;
   
   const updates = [];
   if (org_name !== undefined) updates.push(['org_name', org_name]);
   if (org_address !== undefined) updates.push(['org_address', org_address]);
   if (currency !== undefined) updates.push(['currency', currency]);
+  if (receipt_language !== undefined) updates.push(['receipt_language', receipt_language]);
 
   if (updates.length === 0) {
     return res.status(400).json({ error: 'No fields provided' });
@@ -375,6 +401,70 @@ app.post('/api/transactions', authenticateToken, (req, res) => {
         db.run("COMMIT", (err) => {
           if (err) return res.status(500).json({ error: "Commit failed" });
           res.json({ success: true, transaction_id: txId });
+        });
+      }
+    );
+  });
+});
+
+app.get('/api/transactions/:id', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  db.get("SELECT * FROM transactions WHERE id = ?", [id], (err, tx) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!tx) return res.status(404).json({ error: 'Transaction not found' });
+    
+    db.all("SELECT * FROM transaction_lines WHERE transaction_id = ?", [id], (err, lines) => {
+      if (err) return res.status(500).json({ error: err.message });
+      
+      const totalDr = lines.filter(l => l.type === 'Dr').reduce((sum, l) => sum + l.amount, 0);
+      const totalCr = lines.filter(l => l.type === 'Cr').reduce((sum, l) => sum + l.amount, 0);
+      
+      res.json({
+        ...tx,
+        lines,
+        totalDr,
+        totalCr
+      });
+    });
+  });
+});
+
+app.put('/api/transactions/:id', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const { sn, date, final_description, lines } = req.body;
+  if (!sn || !date || !lines || lines.length === 0) {
+    return res.status(400).json({ error: 'Missing required fields or lines' });
+  }
+
+  db.serialize(() => {
+    db.run("BEGIN TRANSACTION");
+    const modified_at = new Date().toISOString();
+    db.run(`UPDATE transactions SET sn = ?, date = ?, final_description = ?, modified_by = ?, modified_at = ? WHERE id = ?`,
+      [sn, date, final_description, req.user.name, modified_at, id],
+      function (err) {
+        if (err) {
+          db.run("ROLLBACK");
+          return res.status(500).json({ error: err.message });
+        }
+        
+        db.run("DELETE FROM transaction_lines WHERE transaction_id = ?", [id], function (err) {
+            if (err) {
+                db.run("ROLLBACK");
+                return res.status(500).json({ error: err.message });
+            }
+
+            const stmt = db.prepare("INSERT INTO transaction_lines (transaction_id, code_number, type, amount) VALUES (?, ?, ?, ?)");
+            for (const line of lines) {
+              stmt.run(id, line.code_number, line.type, line.amount, (err) => {
+                 if (err) console.error("Error inserting line:", err);
+              });
+            }
+            stmt.finalize();
+            
+            db.run("COMMIT", (err) => {
+              if (err) return res.status(500).json({ error: "Commit failed" });
+              res.json({ success: true, transaction_id: id });
+            });
         });
       }
     );

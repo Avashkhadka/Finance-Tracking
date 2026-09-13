@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import DashboardHeader from '../components/dashboard/DashboardHeader';
 import DashboardMetricCards from '../components/dashboard/DashboardMetricCards';
 import DashboardCharts from '../components/dashboard/DashboardCharts';
-import DashboardTransactions from '../components/dashboard/DashboardTransactions';
 import DashboardFooter from '../components/dashboard/DashboardFooter';
 
 export default function Dashboard() {
@@ -47,7 +46,6 @@ export default function Dashboard() {
 
           <DashboardMetricCards transactions={transactions} />
           <DashboardCharts transactions={transactions} />
-          <DashboardTransactions transactions={transactions} />
           
         </div>
       </main>

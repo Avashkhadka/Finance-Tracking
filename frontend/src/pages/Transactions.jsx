@@ -1,13 +1,18 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import DashboardHeader from '../components/dashboard/DashboardHeader';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { NepaliDatePicker } from "nepali-datepicker-reactjs";
 import "nepali-datepicker-reactjs/dist/index.css";
 export default function Transactions() {
   const { token, currency } = useContext(AuthContext);
   const navigate = useNavigate();
+  const { id } = useParams();
+  const location = useLocation();
+  
+  const isEdit = location.pathname.includes('/edit/');
+  const isReverse = location.pathname.includes('/reverse/');
   
   const [date, setDate] = useState('');
   const [sn, setSn] = useState('');
@@ -35,7 +40,53 @@ export default function Transactions() {
       setHasCodes(false);
       Swal.fire('Missing Data', 'No codes found. Please log in again or add codes.', 'error');
     }
-  }, []);
+
+    if (id) {
+        fetch(`/api/transactions/${id}`, {
+            headers: { 'Authorization': 'Bearer ' + token }
+        })
+        .then(res => res.json())
+        .then(data => {
+            setDate(data.date);
+            setSn(isReverse ? `${data.sn}-REV` : data.sn);
+            setFinalDescription(isReverse ? `[Reversal] ${data.final_description || ''}` : (data.final_description || ''));
+            
+            const mappedLines = data.lines.map(line => {
+                let dr = '';
+                let cr = '';
+                if (isReverse) {
+                    if (line.type === 'Cr') dr = line.amount.toString();
+                    if (line.type === 'Dr') cr = line.amount.toString();
+                } else {
+                    if (line.type === 'Dr') dr = line.amount.toString();
+                    if (line.type === 'Cr') cr = line.amount.toString();
+                }
+                
+                let desc = '';
+                try {
+                    const codesString = sessionStorage.getItem('codes');
+                    if (codesString) {
+                        const parsed = JSON.parse(codesString);
+                        const nepaliToEnglish = { '०': '0', '१': '1', '२': '2', '३': '3', '४': '4', '५': '5', '६': '6', '७': '7', '८': '8', '९': '9' };
+                        const normalize = (str) => String(str).replace(/[०-९]/g, m => nepaliToEnglish[m]).trim();
+                        const code = parsed.find(c => normalize(c.code_number) === normalize(line.code_number));
+                        if (code) desc = code.description;
+                    }
+                } catch(e){}
+                
+                return {
+                    code_number: line.code_number,
+                    description: desc,
+                    dr_amount: dr,
+                    cr_amount: cr
+                };
+            });
+            
+            setLines(mappedLines);
+        })
+        .catch(console.error);
+    }
+  }, [id, token, isReverse]);
   
   // Calculate totals
   const totalDr = lines.reduce((sum, l) => sum + (parseFloat(l.dr_amount) || 0), 0);
@@ -74,8 +125,10 @@ export default function Transactions() {
       return;
     }
     
+    const nowTime = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const payloadDate = date.includes(' ') ? date : `${date} ${nowTime}`;
     const payload = {
-      date,
+      date: payloadDate,
       sn,
       final_description: finalDescription,
       lines: lines.flatMap(l => {
@@ -87,8 +140,11 @@ export default function Transactions() {
     };
     
     try {
-      const res = await fetch('/api/transactions', {
-        method: 'POST',
+      const url = isEdit ? `/api/transactions/${id}` : '/api/transactions';
+      const method = isEdit ? 'PUT' : 'POST';
+      
+      const res = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + token
@@ -103,7 +159,7 @@ export default function Transactions() {
           toast: true,
           position: 'top-end',
           icon: 'success',
-          title: 'Transaction Posted!',
+          title: isEdit ? 'Transaction Updated!' : 'Transaction Posted!',
           showConfirmButton: false,
           timer: 3000
         });
@@ -216,8 +272,12 @@ export default function Transactions() {
       <DashboardHeader />
       <main className="pt-24 pb-16 max-w-5xl mx-auto px-4">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">Create Journal Entry</h1>
-          <p className="text-slate-500">Record a new financial transaction into the ledger.</p>
+          <h1 className="text-2xl font-bold text-slate-900">
+             {isEdit ? 'Edit Journal Entry' : isReverse ? 'Reverse Journal Entry' : 'Create Journal Entry'}
+          </h1>
+          <p className="text-slate-500">
+             {isEdit ? 'Modify an existing transaction.' : isReverse ? 'Record a reversal transaction.' : 'Record a new financial transaction into the ledger.'}
+          </p>
         </div>
         
         {!hasCodes ? (
@@ -323,7 +383,7 @@ export default function Transactions() {
               className="px-6 py-2.5 bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-medium rounded-lg shadow-sm shadow-brand-200 transition-colors flex items-center gap-2"
             >
               <span className="material-symbols-outlined text-[18px]">save</span>
-              Post Transaction
+              {isEdit ? 'Update Transaction' : 'Post Transaction'}
             </button>
           </div>
         </form>

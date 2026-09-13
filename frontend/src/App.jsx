@@ -5,7 +5,6 @@ import Transactions from './pages/Transactions';
 import ViewTransactions from './pages/ViewTransactions';
 import Users from './pages/Users';
 import Codes from './pages/Codes';
-import FiscalYears from './pages/FiscalYears';
 import Settings from './pages/Settings';
 import ChangePassword from './pages/ChangePassword';
 import { AuthProvider } from './context/AuthContext';
@@ -42,6 +41,22 @@ export default function App() {
             } 
           />
           <Route 
+            path="/transactions/edit/:id" 
+            element={
+              <ProtectedRoute requireAdmin={true}>
+                <Transactions />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/transactions/reverse/:id" 
+            element={
+              <ProtectedRoute requireAdmin={true}>
+                <Transactions />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
             path="/change-password" 
             element={
               <ProtectedRoute>
@@ -65,14 +80,7 @@ export default function App() {
               </ProtectedRoute>
             } 
           />
-          <Route 
-            path="/fiscal-years" 
-            element={
-              <ProtectedRoute requireAdmin={true}>
-                <FiscalYears />
-              </ProtectedRoute>
-            } 
-          />
+
           <Route 
             path="/settings" 
             element={
