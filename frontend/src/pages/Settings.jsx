@@ -4,12 +4,16 @@ import DashboardHeader from '../components/dashboard/DashboardHeader';
 import Swal from 'sweetalert2';
 
 export default function Settings() {
-  const { token, orgName, refreshOrgName } = useContext(AuthContext);
+  const { token, orgName, orgAddress, currency, refreshOrgName } = useContext(AuthContext);
   const [newOrgName, setNewOrgName] = useState(orgName || '');
+  const [newOrgAddress, setNewOrgAddress] = useState(orgAddress || '');
+  const [newCurrency, setNewCurrency] = useState(currency || '$');
 
   useEffect(() => {
     if (orgName) setNewOrgName(orgName);
-  }, [orgName]);
+    if (orgAddress) setNewOrgAddress(orgAddress);
+    if (currency) setNewCurrency(currency);
+  }, [orgName, orgAddress, currency]);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -20,7 +24,11 @@ export default function Settings() {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + token
         },
-        body: JSON.stringify({ org_name: newOrgName })
+        body: JSON.stringify({ 
+          org_name: newOrgName,
+          org_address: newOrgAddress,
+          currency: newCurrency
+        })
       });
       if (res.ok) {
         await refreshOrgName(); // Trigger a refresh in context to update headers/title
@@ -74,6 +82,32 @@ export default function Settings() {
                   value={newOrgName}
                   onChange={(e) => setNewOrgName(e.target.value)}
                   required 
+                  type="text"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="orgAddress">Organization Address</label>
+                <input 
+                  className="w-full max-w-md px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all" 
+                  id="orgAddress" 
+                  name="orgAddress" 
+                  placeholder="e.g. Kathmandu, Nepal" 
+                  value={newOrgAddress}
+                  onChange={(e) => setNewOrgAddress(e.target.value)}
+                  type="text"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5" htmlFor="currency">Currency Symbol</label>
+                <input 
+                  className="w-full max-w-md px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all" 
+                  id="currency" 
+                  name="currency" 
+                  placeholder="e.g. $, Rs." 
+                  value={newCurrency}
+                  onChange={(e) => setNewCurrency(e.target.value)}
                   type="text"
                 />
               </div>

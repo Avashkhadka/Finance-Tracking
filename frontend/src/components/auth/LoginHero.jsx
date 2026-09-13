@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 
 export default function LoginHero() {
-  const { orgName } = useContext(AuthContext);
+  const { orgName, currency } = useContext(AuthContext);
   const [stats, setStats] = useState(null);
 
   useEffect(() => {
@@ -12,7 +12,10 @@ export default function LoginHero() {
       .catch(console.error);
   }, []);
 
-  const formatMoney = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+  const formatMoney = (val) => {
+    const num = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+    return `${currency || '$'}${num}`;
+  };
 
   // Default hardcoded paths if no stats
   let netWorthPath = "M0,110 C80,105 150,90 220,70 C290,50 380,35 460,22";

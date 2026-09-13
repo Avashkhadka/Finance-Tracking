@@ -238,18 +238,35 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.put('/api/settings', authenticateToken, requireAdmin, (req, res) => {
-  const { org_name } = req.body;
-  if (org_name === undefined) {
-    return res.status(400).json({ error: 'Missing org_name' });
-  }
+  const { org_name, org_address, currency } = req.body;
   
-  db.run("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", 
-    ['org_name', org_name], 
-    (err) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ success: true, org_name });
+  const updates = [];
+  if (org_name !== undefined) updates.push(['org_name', org_name]);
+  if (org_address !== undefined) updates.push(['org_address', org_address]);
+  if (currency !== undefined) updates.push(['currency', currency]);
+
+  if (updates.length === 0) {
+    return res.status(400).json({ error: 'No fields provided' });
+  }
+
+  db.serialize(() => {
+    db.run("BEGIN TRANSACTION");
+    let hasError = false;
+
+    const stmt = db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+    
+    for (const [key, val] of updates) {
+      stmt.run(key, val, (err) => {
+        if (err) hasError = true;
+      });
     }
-  );
+    stmt.finalize();
+
+    db.run(hasError ? "ROLLBACK" : "COMMIT", (err) => {
+      if (err || hasError) return res.status(500).json({ error: "Failed to save settings" });
+      res.json({ success: true });
+    });
+  });
 });
 
 // === PUBLIC STATS ===
@@ -330,15 +347,15 @@ app.get('/api/transactions', authenticateToken, (req, res) => {
 });
 
 app.post('/api/transactions', authenticateToken, (req, res) => {
-  const { sn, name, date, final_description, lines } = req.body;
-  if (!sn || !name || !date || !lines || lines.length === 0) {
+  const { sn, date, final_description, lines } = req.body;
+  if (!sn || !date || !lines || lines.length === 0) {
     return res.status(400).json({ error: 'Missing required fields or lines' });
   }
 
   db.serialize(() => {
     db.run("BEGIN TRANSACTION");
-    db.run(`INSERT INTO transactions (sn, name, date, final_description) VALUES (?, ?, ?, ?)`,
-      [sn, name, date, final_description],
+    db.run(`INSERT INTO transactions (sn, date, final_description, created_by) VALUES (?, ?, ?, ?)`,
+      [sn, date, final_description, req.user.name],
       function (err) {
         if (err) {
           db.run("ROLLBACK");

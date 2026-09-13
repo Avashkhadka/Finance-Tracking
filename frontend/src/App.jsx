@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
+import ViewTransactions from './pages/ViewTransactions';
 import Users from './pages/Users';
 import Codes from './pages/Codes';
 import FiscalYears from './pages/FiscalYears';
@@ -29,6 +30,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Transactions />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/transactions/all" 
+            element={
+              <ProtectedRoute>
+                <ViewTransactions />
               </ProtectedRoute>
             } 
           />

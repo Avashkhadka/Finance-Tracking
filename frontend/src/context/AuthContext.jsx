@@ -8,6 +8,8 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem('token') || null);
   const [loading, setLoading] = useState(true);
   const [orgName, setOrgName] = useState('FinanceManage');
+  const [orgAddress, setOrgAddress] = useState('');
+  const [currency, setCurrency] = useState('$');
 
   const refreshOrgName = async () => {
     try {
@@ -18,6 +20,8 @@ export const AuthProvider = ({ children }) => {
           setOrgName(data.org_name);
           document.title = data.org_name;
         }
+        if (data.org_address) setOrgAddress(data.org_address);
+        if (data.currency) setCurrency(data.currency);
       }
     } catch (e) {
       console.error(e);
@@ -69,7 +73,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, loading, orgName, refreshOrgName }}>
+    <AuthContext.Provider value={{ user, token, login, logout, loading, orgName, orgAddress, currency, refreshOrgName }}>
       {!loading && children}
     </AuthContext.Provider>
   );

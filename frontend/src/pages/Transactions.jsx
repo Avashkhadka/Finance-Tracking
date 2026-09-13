@@ -3,18 +3,18 @@ import { AuthContext } from '../context/AuthContext';
 import DashboardHeader from '../components/dashboard/DashboardHeader';
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
-
+import { NepaliDatePicker } from "nepali-datepicker-reactjs";
+import "nepali-datepicker-reactjs/dist/index.css";
 export default function Transactions() {
-  const { token } = useContext(AuthContext);
+  const { token, currency } = useContext(AuthContext);
   const navigate = useNavigate();
   
-  const [name, setName] = useState('');
   const [date, setDate] = useState('');
   const [sn, setSn] = useState('');
   const [finalDescription, setFinalDescription] = useState('');
   
   const [lines, setLines] = useState([
-    { code_number: '', description: '', type: 'Dr', amount: '' }
+    { code_number: '', description: '', dr_amount: '', cr_amount: '' }
   ]);
   
   const [submitted, setSubmitted] = useState(false);
@@ -38,8 +38,8 @@ export default function Transactions() {
   }, []);
   
   // Calculate totals
-  const totalDr = lines.filter(l => l.type === 'Dr').reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
-  const totalCr = lines.filter(l => l.type === 'Cr').reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+  const totalDr = lines.reduce((sum, l) => sum + (parseFloat(l.dr_amount) || 0), 0);
+  const totalCr = lines.reduce((sum, l) => sum + (parseFloat(l.cr_amount) || 0), 0);
 
   const handleLineChange = (index, field, value) => {
     const newLines = [...lines];
@@ -59,7 +59,7 @@ export default function Transactions() {
   };
 
   const addLine = () => {
-    setLines([...lines, { code_number: '', description: '', type: 'Dr', amount: '' }]);
+    setLines([...lines, { code_number: '', description: '', dr_amount: '', cr_amount: '' }]);
   };
 
   const removeLine = (index) => {
@@ -75,14 +75,15 @@ export default function Transactions() {
     }
     
     const payload = {
-      name,
       date,
       sn,
       final_description: finalDescription,
-      lines: lines.map(l => ({
-        ...l,
-        amount: parseFloat(l.amount) || 0
-      }))
+      lines: lines.flatMap(l => {
+        const result = [];
+        if (parseFloat(l.dr_amount) > 0) result.push({ code_number: l.code_number, type: 'Dr', amount: parseFloat(l.dr_amount) });
+        if (parseFloat(l.cr_amount) > 0) result.push({ code_number: l.code_number, type: 'Cr', amount: parseFloat(l.cr_amount) });
+        return result;
+      })
     };
     
     try {
@@ -115,7 +116,10 @@ export default function Transactions() {
     }
   };
 
-  const formatMoney = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+  const formatMoney = (val) => {
+    const num = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+    return `${currency || '$'}${num}`;
+  };
 
   if (submitted && submittedData) {
     return (
@@ -134,12 +138,12 @@ export default function Transactions() {
             <div className="border border-slate-200 rounded-lg overflow-hidden">
               <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between">
                 <div>
-                  <p className="text-sm text-slate-500 font-semibold uppercase tracking-wider">Transaction Name</p>
-                  <p className="font-medium text-slate-900">{submittedData.name}</p>
+                  <p className="text-sm text-slate-500 font-semibold uppercase tracking-wider">Date</p>
+                  <p className="font-medium text-slate-900">{submittedData.date}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm text-slate-500 font-semibold uppercase tracking-wider">Date & SN</p>
-                  <p className="font-medium text-slate-900">{submittedData.date} | #{submittedData.sn}</p>
+                  <p className="text-sm text-slate-500 font-semibold uppercase tracking-wider">S/N (Serial Number)</p>
+                  <p className="font-medium text-slate-900">#{submittedData.sn}</p>
                 </div>
               </div>
               
@@ -191,11 +195,10 @@ export default function Transactions() {
                 onClick={() => {
                   setSubmitted(false);
                   setSubmittedData(null);
-                  setName('');
                   setSn('');
                   setDate('');
                   setFinalDescription('');
-                  setLines([{ code_number: '', description: '', type: 'Dr', amount: '' }]);
+                  setLines([{ code_number: '', description: '', dr_amount: '', cr_amount: '' }]);
                 }}
               >
                 <span className="material-symbols-outlined text-sm">add</span>
@@ -229,14 +232,15 @@ export default function Transactions() {
         ) : (
           <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           {/*  Header Fields  */}
-          <div className="p-6 border-b border-slate-200 bg-slate-50 grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Transaction Name</label>
-              <input required value={name} onChange={e => setName(e.target.value)} type="text" className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500" placeholder="e.g. Office Supplies" />
-            </div>
+          <div className="p-6 border-b border-slate-200 bg-slate-50 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">Date</label>
-              <input required value={date} onChange={e => setDate(e.target.value)} type="date" className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500" />
+              <NepaliDatePicker 
+                inputClassName="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500" 
+                value={date} 
+                onChange={(value) => setDate(value)} 
+                options={{ calenderLocale: "en", valueLocale: "en" }} 
+              />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">S/N (Serial Number)</label>
@@ -258,16 +262,13 @@ export default function Transactions() {
                     <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Description</label>
                     <input readOnly disabled value={line.description} type="text" className="w-full bg-slate-100 border border-slate-300 rounded-md px-2 py-1.5 text-sm text-slate-500 cursor-not-allowed" placeholder="Auto-filled from code..." />
                   </div>
-                  <div className="w-full md:w-24">
-                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Dr / Cr</label>
-                    <select value={line.type} onChange={e => handleLineChange(index, 'type', e.target.value)} className="w-full bg-white border border-slate-300 rounded-md px-2 py-1.5 text-sm">
-                      <option value="Dr">Debit (Dr)</option>
-                      <option value="Cr">Credit (Cr)</option>
-                    </select>
+                  <div className="w-full md:w-32">
+                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Debit (Dr)</label>
+                    <input value={line.dr_amount} onChange={e => handleLineChange(index, 'dr_amount', e.target.value)} disabled={!!line.cr_amount} type="number" step="0.01" min="0.01" className="w-full bg-white border border-slate-300 rounded-md px-2 py-1.5 text-sm font-mono disabled:bg-slate-50 disabled:text-slate-400" placeholder="0.00" />
                   </div>
-                  <div className="w-full md:w-40">
-                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Amount</label>
-                    <input required value={line.amount} onChange={e => handleLineChange(index, 'amount', e.target.value)} type="number" step="0.01" min="0.01" className="w-full bg-white border border-slate-300 rounded-md px-2 py-1.5 text-sm font-mono" placeholder="0.00" />
+                  <div className="w-full md:w-32">
+                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Credit (Cr)</label>
+                    <input value={line.cr_amount} onChange={e => handleLineChange(index, 'cr_amount', e.target.value)} disabled={!!line.dr_amount} type="number" step="0.01" min="0.01" className="w-full bg-white border border-slate-300 rounded-md px-2 py-1.5 text-sm font-mono disabled:bg-slate-50 disabled:text-slate-400" placeholder="0.00" />
                   </div>
                   
                   {lines.length > 1 && (

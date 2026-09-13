@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useContext } from 'react';
+import { AuthContext } from '../../context/AuthContext';
 
 export default function DashboardMetricCards({ transactions = [] }) {
+  const { currency } = useContext(AuthContext);
   // Compute metrics from transactions
   // For a double entry system:
   // Income: Cr entries for Income classification (we'll just use totalCr for income for simplicity or we don't have classification fetched here. Wait, classification isn't in transaction lines, just code_number).
@@ -16,7 +18,10 @@ export default function DashboardMetricCards({ transactions = [] }) {
   const monthlyIncome = totalAssets > 0 ? totalAssets * 0.1 : 0;
   const monthlyExpenses = totalLiabilities > 0 ? totalLiabilities * 0.1 : 0;
 
-  const formatMoney = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+  const formatMoney = (val) => {
+    const num = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+    return `${currency || '$'}${num}`;
+  };
 
   return (
     <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">

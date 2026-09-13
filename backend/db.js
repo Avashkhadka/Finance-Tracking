@@ -48,9 +48,9 @@ db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS transactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sn TEXT NOT NULL,
-    name TEXT NOT NULL,
     date TEXT NOT NULL,
-    final_description TEXT
+    final_description TEXT,
+    created_by TEXT
   )`);
 
   db.run(`CREATE TABLE IF NOT EXISTS transaction_lines (
